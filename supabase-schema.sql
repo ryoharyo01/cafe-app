@@ -369,7 +369,8 @@ CREATE TABLE ai_chat_limits (
   reset_at BIGINT NOT NULL
 );
 
--- Insert default admin users for each role (PIN: 123456)
+-- Insert default admin users for each role
+-- PIN default: admin=111111, kasir=222222, dapur=333333 (hash bcrypt)
 INSERT INTO admin_users (email, name, role, pin) VALUES
   ('admin@cafe.local', 'Admin Pusat', 'admin', '$2b$10$kS6W7M29KptpVoRolEDIEuV3AMG/UFNKBMMy15Zhk5el1p9e9atVO'),
   ('kasir@cafe.local', 'Kasir Depan', 'kasir', '$2b$10$lBVZP170U9cPwOVE/c7zkOQHWmaKGHF1xxtb0VMbUHApSZy48cT3u'),

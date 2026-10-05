@@ -35,6 +35,12 @@ Dibangun dengan **Next.js 16 (App Router)** + **Supabase** + **Tailwind CSS 4**.
 - **Status pesanan realtime** — pelanggan lihat pesanannya berubah status tanpa refresh.
 - **QR per meja** — tiap meja punya token unik; scan langsung masuk halaman meja itu.
 
+### Sisi Kasir (POS)
+
+- **Halaman `/pos`** — layar kasir khusus (admin & kasir). Katalog menu + pencarian + filter kategori, keranjang, tombol **Bayar Tunai**.
+- **Pembayaran tunai atomik** — order walk-in (`table_id = NULL`) dibuat dan langsung ditandai `paid`/`cash` dalam satu transaksi RPC, lengkap dengan hitungan kembalian dan usulan pecahan uang.
+- **Anti-race** — pembayaran mengunci baris order (`FOR UPDATE`); bayar dua kali ditolak `409`. Kalau pelunasan gagal, order otomatis dibatalkan.
+
 ### Sisi Dapur (KDS)
 
 - **Layar dapur** — pesanan masuk realtime, tombol ubah status (`paid` → `preparing` → `ready` → `completed`).
@@ -55,13 +61,13 @@ Dibangun dengan **Next.js 16 (App Router)** + **Supabase** + **Tailwind CSS 4**.
 ## Arsitektur Singkat
 
 ```
-Pelanggan (HP)                Dapur              Admin
+Pelanggan (HP)                Dapur              Admin/Kasir
      │                          │                  │
      │ scan QR                  │                  │
      ▼                          ▼                  ▼
 ┌──────────────────────────────────────────────────────┐
 │                  Next.js App Router                  │
-│  /table/[token]   /kds   /admin   /login             │
+│  /table/[token]  /kds  /pos  /admin  /login          │
 │                                                      │
 │  API Routes (/api/*)  ← validasi harga di server     │
 └──────────────────────┬───────────────────────────────┘
@@ -204,8 +210,9 @@ npm start
 ### Staf
 
 1. Buka `/login`, masukkan PIN sesuai role.
-2. **Admin** → `/admin` (Overview, Master Menu, Master QR, Orders).
-3. **Dapur** → `/kds` untuk memproses pesanan.
+2. **Admin** → `/admin` (Kasir POS, Overview, Master Menu, Master QR, Orders).
+3. **Kasir** → `/pos` (layar kasir: buat order walk-in + bayar tunai).
+4. **Dapur** → `/kds` untuk memproses pesanan.
 
 Status pesanan: `pending` → `paid` → `preparing` → `ready` → `completed`.
 
@@ -224,12 +231,22 @@ Status pesanan: `pending` → `paid` → `preparing` → `ready` → `completed`
 | `GET` | `/api/orders/[id]/status` | Status pesanan saja |
 | `POST` | `/api/ai/chat` | Chat AI rekomendasi menu |
 
+### Kasir / POS (butuh sesi `admin` atau `kasir`)
+
+| Method | Endpoint | Keterangan |
+|---|---|---|
+| `GET` | `/api/pos/menu` | Katalog menu ringkas untuk layar kasir |
+| `POST` | `/api/pos/orders` | Buat order walk-in (harga dihitung ulang di DB) |
+| `POST` | `/api/pos/orders/[id]/pay` | Bayar tunai (atomik, hitung kembalian) |
+| `POST` | `/api/pos/orders/[id]/cancel` | Batalkan order walk-in yang belum dibayar |
+
 ### Auth
 
 | Method | Endpoint | Keterangan |
 |---|---|---|
 | `POST` | `/api/auth/login` | Login pakai PIN → set cookie `admin_session` |
 | `POST` | `/api/auth/logout` | Hapus sesi |
+| `GET` | `/api/auth/session` | Info sesi aktif (nama + role) |
 
 ### Admin (butuh sesi)
 
@@ -309,6 +326,8 @@ Salin URL yang diberikan, lalu isi itu sebagai **Base URL** di tab **Master QR**
 | Login gagal "PIN salah" | Cek tabel `admin_users`, atau jalankan ulang `supabase-schema.sql` |
 | AI chat error 401 | `OPENAI_API_KEY` kosong/dummy, atau `OPENAI_BASE_URL` salah |
 | Pembayaran tidak lanjut ke `paid` | Key Midtrans masih placeholder — isi key sandbox asli |
+| Kasir tidak bisa buka `/pos` | Login dengan PIN kasir (`222222`); role `dapur` memang ditolak di `/pos` |
+| Bayar tunai ditolak `409` | Pesanan sudah dibayar/dibatalkan orang lain — tarik ulang daftar |
 
 ---
 

@@ -6,8 +6,14 @@ export async function proxy(request: NextRequest) {
   const token = request.cookies.get('admin_session')?.value
 
   // Web pages without a session go straight to /login (no secret needed)
-  const isUi = request.nextUrl.pathname.startsWith('/admin') || request.nextUrl.pathname.startsWith('/kds')
-  const isApi = request.nextUrl.pathname.startsWith('/api/admin') || (request.method === 'PATCH' && !!request.nextUrl.pathname.match(/^\/api\/orders\/.*\/status$/))
+  const isUi =
+    request.nextUrl.pathname.startsWith('/admin') ||
+    request.nextUrl.pathname.startsWith('/kds') ||
+    request.nextUrl.pathname.startsWith('/pos')
+  const isApi =
+    request.nextUrl.pathname.startsWith('/api/admin') ||
+    request.nextUrl.pathname.startsWith('/api/pos') ||
+    (request.method === 'PATCH' && !!request.nextUrl.pathname.match(/^\/api\/orders\/.*\/status$/))
 
   if (!token) {
     if (isUi) {
@@ -37,6 +43,10 @@ export async function proxy(request: NextRequest) {
       if (request.nextUrl.pathname.startsWith('/kds') && !['admin', 'dapur'].includes(role)) {
         return NextResponse.redirect(new URL('/login', request.url))
       }
+
+      if (request.nextUrl.pathname.startsWith('/pos') && !['admin', 'kasir'].includes(role)) {
+        return NextResponse.redirect(new URL('/login', request.url))
+      }
       
       return NextResponse.next()
     } catch (e) {
@@ -51,6 +61,11 @@ export async function proxy(request: NextRequest) {
 
       if (request.nextUrl.pathname.startsWith('/api/admin') && role !== 'admin') {
         return NextResponse.json({ error: 'Forbidden: Admin only' }, { status: 403 })
+      }
+
+      // POS kasir: admin & kasir boleh jualan; dapur tidak.
+      if (request.nextUrl.pathname.startsWith('/api/pos') && !['admin', 'kasir'].includes(role)) {
+        return NextResponse.json({ error: 'Forbidden: Admin atau Kasir only' }, { status: 403 })
       }
       
       if (request.method === 'PATCH' && !!request.nextUrl.pathname.match(/^\/api\/orders\/.*\/status$/) && !['admin', 'dapur'].includes(role)) {
@@ -67,5 +82,12 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/kds/:path*', '/api/admin/:path*', '/api/orders/:id/status'],
+  matcher: [
+    '/admin/:path*',
+    '/kds/:path*',
+    '/pos/:path*',
+    '/api/admin/:path*',
+    '/api/pos/:path*',
+    '/api/orders/:id/status',
+  ],
 }

@@ -24,7 +24,11 @@ export default function LoginPage() {
         const data = await res.json()
         setError(data.error || 'Login failed')
       } else {
-        router.push('/admin')
+        const data = await res.json()
+        const role = data?.user?.role
+        if (role === 'dapur') router.push('/kds')
+        else if (role === 'kasir') router.push('/pos')
+        else router.push('/admin')
       }
     } catch (err: any) {
       setError(err.message)

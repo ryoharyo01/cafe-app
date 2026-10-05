@@ -5,12 +5,13 @@ import { Order, MenuItem } from '@/lib/types'
 import { formatRupiah } from '@/lib/utils'
 import MasterMenu from '@/components/MasterMenu'
 import MasterQR from '@/components/MasterQR'
-import { BarChart3, UtensilsCrossed, QrCode as QrIcon, ClipboardList, Loader2 } from 'lucide-react'
+import POS from '@/components/POS'
+import { BarChart3, UtensilsCrossed, QrCode as QrIcon, ClipboardList, Loader2, Banknote } from 'lucide-react'
 
-type Tab = 'overview' | 'master-menu' | 'master-qr' | 'orders'
+type Tab = 'pos' | 'overview' | 'master-menu' | 'master-qr' | 'orders'
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<Tab>('pos')
   const [orders, setOrders] = useState<Order[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -41,6 +42,7 @@ export default function AdminPage() {
   const todayRevenue = todayOrders.filter(o => o.payment_status === 'paid').reduce((s, o) => s + o.total, 0)
 
   const tabs: { key: Tab; label: string; icon: typeof BarChart3 }[] = [
+    { key: 'pos', label: 'Kasir (POS)', icon: Banknote },
     { key: 'overview', label: 'Overview', icon: BarChart3 },
     { key: 'master-menu', label: 'Master Menu', icon: UtensilsCrossed },
     { key: 'master-qr', label: 'Master QR', icon: QrIcon },
@@ -79,6 +81,9 @@ export default function AdminPage() {
       </div>
 
       <div className="max-w-6xl mx-auto p-4">
+        {/* POS KASIR */}
+        {tab === 'pos' && <POS />}
+
         {/* OVERVIEW */}
         {tab === 'overview' && (
           <div>

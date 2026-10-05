@@ -140,7 +140,7 @@ function OrderCard({
         <div className="flex items-center gap-3">
           <span className="text-2xl font-black text-white">#{order.order_number}</span>
           <span className={cn('text-sm font-semibold px-2 py-0.5 rounded-full', config.badge)}>
-            Meja {order.table?.number ?? '?'}
+            {order.table?.number ? `Meja ${order.table.number}` : 'Walk-in'}
           </span>
         </div>
         <div className={cn('flex items-center gap-1.5 text-sm font-mono', urgent ? 'text-red-400' : 'text-stone-400')}>

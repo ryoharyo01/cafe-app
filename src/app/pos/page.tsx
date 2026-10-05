@@ -9,14 +9,23 @@ import { toast } from 'react-hot-toast'
 export default function PosPage() {
   const router = useRouter()
   const [name, setName] = useState('')
+  const [role, setRole] = useState('')
 
   useEffect(() => {
-    // Nama kasir cuma buat sapaan; diambil dari cookie sesi lewat endpoint ringan.
+    // Nama & peran kasir diambil dari cookie sesi lewat endpoint ringan.
     fetch('/api/auth/session')
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d?.user?.name && setName(d.user.name))
+      .then((d) => {
+        if (d?.user?.name) setName(d.user.name)
+        if (d?.user?.role) setRole(d.user.role)
+      })
       .catch(() => {})
   }, [])
+
+  // Tombol Dapur cuma untuk peran yang memang boleh masuk /kds.
+  // Kasir tidak boleh — proxy akan mengalihkannya, jadi tombolnya jangan
+  // ditampilkan sebagai jalan buntu.
+  const canOpenKitchen = ['admin', 'dapur'].includes(role)
 
   async function logout() {
     try {
@@ -36,12 +45,14 @@ export default function PosPage() {
           </span>
           {name && <span className="text-stone-400 text-sm">· {name}</span>}
           <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={() => router.push('/kds')}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm bg-stone-800 hover:bg-stone-700 text-stone-300"
-            >
-              <ChefHat className="w-4 h-4" /> Dapur
-            </button>
+            {canOpenKitchen && (
+              <button
+                onClick={() => router.push('/kds')}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm bg-stone-800 hover:bg-stone-700 text-stone-300"
+              >
+                <ChefHat className="w-4 h-4" /> Dapur
+              </button>
+            )}
             <button
               onClick={logout}
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm bg-stone-800 hover:bg-stone-700 text-stone-300"

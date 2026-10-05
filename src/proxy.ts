@@ -31,21 +31,27 @@ export async function proxy(request: NextRequest) {
   }
   const secret = new TextEncoder().encode(process.env.JWT_SECRET)
 
+  // Halaman utama tiap peran. Dipakai kalau user yang SUDAH login membuka
+  // halaman milik peran lain: antar ke rumahnya sendiri, jangan buang
+  // sesinya dengan melempar ke /login.
+  const homeFor = (role: string) =>
+    role === 'kasir' ? '/pos' : role === 'dapur' ? '/kds' : '/admin'
+
   if (isUi) {
     try {
       const decoded = await jwtVerify(token, secret)
       const role = decoded.payload.role as string
       
       if (request.nextUrl.pathname.startsWith('/admin') && role !== 'admin') {
-        return NextResponse.redirect(new URL('/login', request.url))
+        return NextResponse.redirect(new URL(homeFor(role), request.url))
       }
       
       if (request.nextUrl.pathname.startsWith('/kds') && !['admin', 'dapur'].includes(role)) {
-        return NextResponse.redirect(new URL('/login', request.url))
+        return NextResponse.redirect(new URL(homeFor(role), request.url))
       }
 
       if (request.nextUrl.pathname.startsWith('/pos') && !['admin', 'kasir'].includes(role)) {
-        return NextResponse.redirect(new URL('/login', request.url))
+        return NextResponse.redirect(new URL(homeFor(role), request.url))
       }
       
       return NextResponse.next()

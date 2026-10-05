@@ -39,3 +39,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# lokal sampah / scratch (jangan ikut ke repo)
+PROGRESS.md
+SETUP.md.bak-lineprefix
+supabase-schema.sql.bak-lineprefix
+_gen_qr.js
+admin-render.html
+
+# Supabase CLI runtime state — berisi secret asli (JANGAN commit)
+supabase/.temp/
+supabase/.branches/

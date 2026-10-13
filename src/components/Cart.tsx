@@ -37,9 +37,15 @@ export default function Cart() {
         body: JSON.stringify({ order_id: orderData.order.id }),
       })
       const payData = await payRes.json()
-      if (!payRes.ok) throw new Error(payData.error)
-
       clearCart()
+      if (!payRes.ok) {
+        // The order already exists: retry from its status page instead of
+        // creating a duplicate order on the next tap
+        toast.error(payData.error || 'Gagal membuka pembayaran')
+        router.push(`/order/${orderData.order.id}/status`)
+        return
+      }
+
       toast.success('Pesanan dibuat! Mengalihkan ke pembayaran...')
 
       // Redirect to Midtrans

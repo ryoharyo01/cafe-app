@@ -7,7 +7,8 @@ import { Category, MenuItem } from '@/lib/types'
 import MenuList from '@/components/MenuList'
 import Cart from '@/components/Cart'
 import AIChat from '@/components/AIChat'
-import { UtensilsCrossed, MessageCircle, ShoppingCart, Loader2, AlertCircle } from 'lucide-react'
+import CoffeeWait from '@/components/CoffeeWait'
+import { UtensilsCrossed, MessageCircle, ShoppingCart, AlertCircle } from 'lucide-react'
 
 type Tab = 'menu' | 'ai' | 'cart'
 
@@ -53,8 +54,8 @@ export default function TablePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-stone-950">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+      <div className="min-h-screen flex items-center justify-center bg-stone-950 p-4">
+        <CoffeeWait stage="loading" />
       </div>
     )
   }

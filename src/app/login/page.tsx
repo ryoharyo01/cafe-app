@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Eye, EyeOff } from 'lucide-react'
 
 export default function LoginPage() {
   const [pin, setPin] = useState('')
+  const [showPin, setShowPin] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
@@ -45,17 +46,26 @@ export default function LoginPage() {
           <p className="text-zinc-500 mt-2">Masukkan PIN kasir untuk masuk</p>
         </div>
         <form onSubmit={handleLogin} className="space-y-6">
-          <div>
+          <div className="relative">
+            {/* text-zinc-900 is required: body text defaults to near-white for the dark theme */}
             <input
-              type="password"
+              type={showPin ? 'text' : 'password'}
               inputMode="numeric"
               maxLength={6}
               value={pin}
               onChange={(e) => setPin(e.target.value)}
-              className="w-full text-center text-3xl tracking-widest p-4 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-all"
+              className="w-full text-center text-3xl tracking-widest p-4 px-14 bg-white text-zinc-900 caret-zinc-900 placeholder:text-zinc-300 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 transition-all"
               placeholder="••••••"
               autoFocus
             />
+            <button
+              type="button"
+              onClick={() => setShowPin(s => !s)}
+              aria-label={showPin ? 'Sembunyikan PIN' : 'Tampilkan PIN'}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-zinc-400 hover:text-zinc-700"
+            >
+              {showPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            </button>
           </div>
           {error && <div className="text-red-500 text-sm text-center">{error}</div>}
           <button

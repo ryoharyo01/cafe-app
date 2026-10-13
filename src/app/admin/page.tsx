@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Order, MenuItem } from '@/lib/types'
+import { useCallback, useEffect, useState } from 'react'
+import { usePolling } from '@/lib/use-polling'
+import { Order } from '@/lib/types'
 import { formatRupiah } from '@/lib/utils'
+import AdminDashboard from '@/components/AdminDashboard'
 import MasterMenu from '@/components/MasterMenu'
 import MasterQR from '@/components/MasterQR'
 import POS from '@/components/POS'
@@ -13,37 +15,30 @@ type Tab = 'pos' | 'overview' | 'master-menu' | 'master-qr' | 'orders'
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('pos')
   const [orders, setOrders] = useState<Order[]>([])
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
-      try {
-        const [ordersRes, menuRes] = await Promise.all([
-          fetch('/api/orders?status=pending,paid,preparing,ready,served,completed,cancelled'),
-          fetch('/api/admin/menu'),
-        ])
-        const ordersData = await ordersRes.json()
-        const menuData = await menuRes.json()
-        setOrders(ordersData.orders || [])
-        setMenuItems(menuData.items || [])
-      } catch (err) {
-        console.error(err)
-      } finally {
-        setLoading(false)
-      }
+  const loadOrders = useCallback(async () => {
+    try {
+      const ordersRes = await fetch('/api/orders?status=pending,paid,preparing,ready,served,completed,cancelled', { cache: 'no-store' })
+      const ordersData = await ordersRes.json()
+      setOrders(ordersData.orders || [])
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
     }
-    load()
   }, [])
 
-  const today = new Date().toDateString()
-  const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === today)
-  const todayRevenue = todayOrders.filter(o => o.payment_status === 'paid').reduce((s, o) => s + o.total, 0)
+  useEffect(() => {
+    loadOrders()
+  }, [loadOrders])
+
+  // Keep the Orders tab live while it's open
+  usePolling(loadOrders, 5000, tab === 'orders')
 
   const tabs: { key: Tab; label: string; icon: typeof BarChart3 }[] = [
     { key: 'pos', label: 'Kasir (POS)', icon: Banknote },
-    { key: 'overview', label: 'Overview', icon: BarChart3 },
+    { key: 'overview', label: 'Dashboard', icon: BarChart3 },
     { key: 'master-menu', label: 'Master Menu', icon: UtensilsCrossed },
     { key: 'master-qr', label: 'Master QR', icon: QrIcon },
     { key: 'orders', label: 'Orders', icon: ClipboardList },
@@ -85,25 +80,7 @@ export default function AdminPage() {
         {tab === 'pos' && <POS />}
 
         {/* OVERVIEW */}
-        {tab === 'overview' && (
-          <div>
-            <h2 className="text-2xl font-bold mb-4">Hari Ini</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-              <div className="bg-stone-900 rounded-2xl p-5">
-                <p className="text-stone-400 text-sm">Total Pesanan</p>
-                <p className="text-3xl font-bold text-amber-500">{todayOrders.length}</p>
-              </div>
-              <div className="bg-stone-900 rounded-2xl p-5">
-                <p className="text-stone-400 text-sm">Revenue</p>
-                <p className="text-3xl font-bold text-green-500">{formatRupiah(todayRevenue)}</p>
-              </div>
-              <div className="bg-stone-900 rounded-2xl p-5">
-                <p className="text-stone-400 text-sm">Menu Aktif</p>
-                <p className="text-3xl font-bold">{menuItems.filter(m => m.is_available).length}</p>
-              </div>
-            </div>
-          </div>
-        )}
+        {tab === 'overview' && <AdminDashboard />}
 
         {/* MASTER MENU */}
         {tab === 'master-menu' && <MasterMenu />}

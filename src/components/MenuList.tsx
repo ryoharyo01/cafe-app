@@ -32,13 +32,14 @@ export default function MenuList({ categories, items, loading = false }: Props) 
         </div>
         <div className="grid grid-cols-1 gap-3">
           {[0, 1, 2, 3, 4, 5].map(i => (
-            <div key={i} className="bg-stone-900 rounded-2xl p-4 flex justify-between items-center h-[104px]">
+            <div key={i} className="bg-stone-900 rounded-2xl p-3 flex justify-between items-center h-[120px]">
+              <div className="w-24 h-24 rounded-xl bg-stone-800 shrink-0 mr-3" />
               <div className="flex-1 mr-3 space-y-2">
                 <div className="h-4 bg-stone-800 rounded w-1/2" />
                 <div className="h-3 bg-stone-800 rounded w-3/4" />
                 <div className="h-4 bg-stone-800 rounded w-1/4" />
               </div>
-              <div className="w-12 h-12 rounded-xl bg-stone-800 shrink-0" />
+              <div className="w-10 h-10 rounded-xl bg-stone-800 shrink-0" />
             </div>
           ))}
         </div>
@@ -100,17 +101,18 @@ export default function MenuList({ categories, items, loading = false }: Props) 
           <button
             key={item.id}
             onClick={() => setSelectedItem(item)}
-            className="bg-stone-900 rounded-2xl p-4 text-left hover:bg-stone-800 flex justify-between items-start"
+            className="bg-stone-900 rounded-2xl p-3 text-left hover:bg-stone-800 flex items-center"
           >
-            <div className="flex-1 mr-3">
+            <MenuPhoto item={item} className="w-24 h-24 rounded-xl mr-3" />
+            <div className="flex-1 min-w-0 mr-3">
               <p className="font-semibold text-stone-100">{item.name}</p>
               {item.description && (
                 <p className="text-stone-400 text-sm mt-1 line-clamp-2">{item.description}</p>
               )}
               <p className="text-amber-500 font-bold mt-2">{formatRupiah(item.base_price)}</p>
             </div>
-            <div className="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center shrink-0" aria-hidden="true">
-              <Plus className="w-6 h-6 text-stone-950" />
+            <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shrink-0" aria-hidden="true">
+              <Plus className="w-5 h-5 text-stone-950" />
             </div>
           </button>
         ))}
@@ -124,6 +126,28 @@ export default function MenuList({ categories, items, loading = false }: Props) 
         <ItemModal item={selectedItem} onClose={() => setSelectedItem(null)} />
       )}
     </div>
+  )
+}
+
+// Menu photo with a neutral placeholder when there's no image or it fails to load
+function MenuPhoto({ item, className, eager = false }: { item: MenuItem; className: string; eager?: boolean }) {
+  const [failed, setFailed] = useState(false)
+  if (!item.image_url || failed) {
+    return (
+      <div className={`${className} bg-stone-800 flex items-center justify-center shrink-0`} aria-hidden="true">
+        <UtensilsCrossed className="w-7 h-7 text-stone-600" />
+      </div>
+    )
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- image_url may be any external URL set in admin
+    <img
+      src={item.image_url}
+      alt={item.name}
+      loading={eager ? 'eager' : 'lazy'}
+      onError={() => setFailed(true)}
+      className={`${className} object-cover shrink-0 bg-stone-800`}
+    />
   )
 }
 
@@ -184,6 +208,9 @@ function ItemModal({ item, onClose }: { item: MenuItem; onClose: () => void }) {
         className="bg-stone-900 w-full max-w-md rounded-t-3xl p-6 max-h-[85vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
+        {item.image_url && (
+          <MenuPhoto item={item} className="w-full aspect-[4/3] rounded-2xl mb-4" eager />
+        )}
         <div className="flex justify-between items-start mb-4">
           <div>
             <h3 className="text-xl font-bold">{item.name}</h3>

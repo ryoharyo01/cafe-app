@@ -18,7 +18,7 @@ export async function GET(
     .from('orders')
     .select(`
       *,
-      table:tables(id, number),
+      table:tables(id, number, qr_token),
       items:order_items(*)
     `)
     .eq('id', id)

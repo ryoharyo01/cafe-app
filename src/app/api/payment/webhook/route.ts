@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   // Verify signature
   const serverKey = process.env.MIDTRANS_SERVER_KEY
   if (!serverKey || serverKey.startsWith('your-')) {
-    return NextResponse.json({ error: 'Midtrans belum dikonfigurasi: set MIDTRANS_SERVER_KEY di .env.local' }, { status: 503 })
+    return NextResponse.json({ error: 'Midtrans belum dikonfigurasi: set MIDTRANS_SERVER_KEY di server env' }, { status: 503 })
   }
   const expectedSignature = crypto
     .createHash('sha512')
@@ -50,24 +50,42 @@ export async function POST(request: NextRequest) {
     paymentStatus = 'pending'
   }
 
-  // Find order by midtrans_order_id
+  // Each payment attempt sends "<midtrans_order_id>-P<suffix>" (see payment/create);
+  // strip the suffix to find the order. Plain ids from older orders still match.
+  const baseOrderId = String(order_id).replace(/-P[0-9A-Z]+$/, '')
+
   const { data: order } = await supabase
     .from('orders')
-    .select('id')
-    .eq('midtrans_order_id', order_id)
+    .select('id, status, payment_status, total')
+    .eq('midtrans_order_id', baseOrderId)
     .single()
 
-  if (order) {
-    await supabase
-      .from('orders')
-      .update({
-        payment_status: paymentStatus,
-        status: orderStatus,
-        midtrans_transaction_id: transaction_id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', order.id)
+  if (!order) {
+    return NextResponse.json({ status: 'ignored: order not found' })
   }
+  if (Math.round(Number(gross_amount)) !== order.total) {
+    console.error('Midtrans amount mismatch', { order_id, gross_amount, total: order.total })
+    return NextResponse.json({ status: 'ignored: amount mismatch' })
+  }
+  // Midtrans retries and can deliver out of order: once paid (or moved on by the
+  // kitchen / cancelled by staff) an order must not be pushed back. The one
+  // exception: a payment that succeeds after an older attempt expired revives
+  // the order, since the customer did pay.
+  const cancelledByPayment = order.status === 'cancelled' && order.payment_status === 'failed'
+  const open = order.status === 'pending' || (cancelledByPayment && paymentStatus === 'paid')
+  if (order.payment_status === 'paid' || !open) {
+    return NextResponse.json({ status: 'ok' })
+  }
+
+  await supabase
+    .from('orders')
+    .update({
+      payment_status: paymentStatus,
+      status: orderStatus,
+      midtrans_transaction_id: transaction_id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', order.id)
 
   return NextResponse.json({ status: 'ok' })
 }

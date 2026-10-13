@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePolling } from '@/lib/use-polling'
 import { useParams, useRouter } from 'next/navigation'
 import { Order } from '@/lib/types'
 import { formatRupiah } from '@/lib/utils'
-import { ArrowLeft, Clock, ChefHat, Check, Truck, Coffee, Loader2 } from 'lucide-react'
+import CoffeeWait, { CoffeeStage } from '@/components/CoffeeWait'
+import { ArrowLeft, ChefHat, Check, Truck, Coffee, Loader2 } from 'lucide-react'
 
 const STATUS_STEPS = [
   { key: 'paid', label: 'Dibayar', icon: Check, color: 'text-amber-500' },
@@ -13,7 +15,14 @@ const STATUS_STEPS = [
   { key: 'served', label: 'Diantar', icon: Truck, color: 'text-emerald-500' },
 ]
 
+// Order status -> coffee animation stage; 'completed' (set by KDS) looks the same as 'served'
+function getCoffeeStage(status: string): CoffeeStage | null {
+  if (status === 'completed') return 'served'
+  return ['pending', 'paid', 'preparing', 'ready', 'served'].includes(status) ? (status as CoffeeStage) : null
+}
+
 function getStepIndex(status: string) {
+  if (status === 'completed') return STATUS_STEPS.length - 1
   const idx = STATUS_STEPS.findIndex(s => s.key === status)
   return idx >= 0 ? idx : -1
 }
@@ -26,68 +35,61 @@ export default function OrderStatusPage() {
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [paying, setPaying] = useState(false)
+  const [payError, setPayError] = useState('')
 
-  useEffect(() => {
-    let cancelled = false
-
-    // Single-order endpoint — lighter than fetching the whole order list
-    async function fetchOrder() {
-      try {
-        const res = await fetch(`/api/orders/${orderId}`)
-        if (!res.ok) {
-          setError('Pesanan tidak ditemukan')
-          return
-        }
-        const data = await res.json()
-        if (!cancelled) setOrder(data.order)
-      } catch {
-        if (!cancelled) setError('Gagal memuat pesanan')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+  async function payNow() {
+    setPaying(true)
+    setPayError('')
+    try {
+      const res = await fetch('/api/payment/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: orderId }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.redirect_url) throw new Error(data.error || 'Gagal membuka pembayaran')
+      window.location.href = data.redirect_url
+    } catch (err: any) {
+      setPayError(err.message)
+      setPaying(false)
     }
+  }
 
-    fetchOrder()
+  const loadedRef = useRef(false)
 
-    // Real-time: subscribe to this order's row
-    let channel: any
-    import('@/lib/supabase/client').then(({ createClient }) => {
-      const supabase = createClient()
-      channel = supabase
-        .channel(`order-${orderId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'orders',
-            filter: `id=eq.${orderId}`,
-          },
-          (payload: any) => {
-            setOrder((prev: Order | null) => (prev ? { ...prev, ...payload.new } : prev))
-          }
-        )
-        .subscribe()
-    })
-
-    // Slow poll as a safety fallback (websocket may drop)
-    const fallback = setInterval(fetchOrder, 30000)
-
-    return () => {
-      cancelled = true
-      clearInterval(fallback)
-      if (channel) {
-        import('@/lib/supabase/client').then(({ createClient }) => {
-          createClient().removeChannel(channel)
-        })
+  // Single-order endpoint — lighter than fetching the whole order list
+  const fetchOrder = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, { cache: 'no-store' })
+      if (!res.ok) {
+        setError('Pesanan tidak ditemukan')
+        return
       }
+      const data = await res.json()
+      loadedRef.current = true
+      setOrder(data.order)
+      setError('')
+    } catch {
+      // After the first load, keep showing the last known state; the next poll retries
+      if (!loadedRef.current) setError('Gagal memuat pesanan')
+    } finally {
+      setLoading(false)
     }
   }, [orderId])
 
+  useEffect(() => {
+    fetchOrder()
+  }, [fetchOrder])
+
+  // Live updates: poll every 4s until the order reaches a final state
+  const finished = !!order && ['served', 'completed', 'cancelled'].includes(order.status)
+  usePolling(fetchOrder, 4000, !finished)
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-stone-950">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+      <div className="min-h-screen flex items-center justify-center bg-stone-950 p-4">
+        <CoffeeWait stage="loading" />
       </div>
     )
   }
@@ -104,6 +106,7 @@ export default function OrderStatusPage() {
   }
 
   const currentStep = getStepIndex(order.status)
+  const coffeeStage = getCoffeeStage(order.status)
 
   return (
     <div className="min-h-screen bg-stone-950 text-stone-100">
@@ -148,33 +151,22 @@ export default function OrderStatusPage() {
 
           {/* Current status message */}
           <div className="text-center">
-            {order.status === 'paid' && (
-              <p className="text-amber-400 flex items-center justify-center gap-2">
-                <Clock className="w-5 h-5 animate-spin" /> Menunggu diproses barista...
-              </p>
-            )}
-            {order.status === 'preparing' && (
-              <p className="text-blue-400 flex items-center justify-center gap-2">
-                <ChefHat className="w-5 h-5" /> Pesanan sedang dibuat ☕
-              </p>
-            )}
-            {order.status === 'ready' && (
-              <p className="text-green-400 flex items-center justify-center gap-2 text-lg font-bold">
-                <Check className="w-6 h-6" /> Pesanan siap diantar! 🎉
-              </p>
-            )}
-            {order.status === 'served' && (
-              <p className="text-emerald-400 flex items-center justify-center gap-2 text-lg font-bold">
-                <Check className="w-6 h-6" /> Pesanan sudah diantar. Selamat menikmati! 😊
-              </p>
+            {coffeeStage && <CoffeeWait stage={coffeeStage} />}
+            {order.status === 'pending' && order.payment_status !== 'paid' && (
+              <div className="mt-5">
+                <button
+                  onClick={payNow}
+                  disabled={paying}
+                  className="w-full py-3 bg-amber-500 text-stone-950 font-bold rounded-xl hover:bg-amber-400 disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {paying && <Loader2 className="w-5 h-5 animate-spin" />}
+                  {paying ? 'Membuka pembayaran...' : `Bayar sekarang • ${formatRupiah(order.total)}`}
+                </button>
+                {payError && <p className="text-red-400 text-sm mt-2">{payError}</p>}
+              </div>
             )}
             {order.status === 'cancelled' && (
               <p className="text-red-400 text-lg font-bold">Pesanan dibatalkan</p>
-            )}
-            {order.status === 'pending' && (
-              <p className="text-stone-400 flex items-center justify-center gap-2">
-                <Loader2 className="w-5 h-5 animate-spin" /> Menunggu pembayaran...
-              </p>
             )}
           </div>
         </div>
@@ -205,9 +197,9 @@ export default function OrderStatusPage() {
         </div>
 
         {/* Pesan Lagi */}
-        {['served', 'completed'].includes(order.status) && order.table_id && (
+        {['served', 'completed'].includes(order.status) && order.table?.qr_token && (
           <button
-            onClick={() => router.push(`/table/demo`)}
+            onClick={() => router.push(`/table/${order.table!.qr_token}`)}
             className="w-full py-4 bg-amber-500 text-stone-950 font-bold rounded-2xl text-lg hover:bg-amber-400"
           >
             Pesan Lagi ☕

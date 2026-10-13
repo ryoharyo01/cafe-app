@@ -22,6 +22,8 @@ declare module 'midtrans-client' {
 
   class Snap {
     constructor(options: SnapOptions)
+    // Underlying axios instance; used to set X-Override-Notification
+    httpClient: { http_client: { defaults: { headers: { common: Record<string, string> } } } }
     createTransaction(params: TransactionDetails): Promise<TransactionResult>
   }
 

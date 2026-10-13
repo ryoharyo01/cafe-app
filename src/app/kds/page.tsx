@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Order, OrderItem, SelectedModifier } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { usePolling } from '@/lib/use-polling'
 import {
   ChefHat,
   Clock,
@@ -214,7 +215,7 @@ export default function KDSPage() {
 
   const fetchOrders = useCallback(async () => {
     try {
-      const res = await fetch('/api/orders?status=paid,preparing,ready')
+      const res = await fetch('/api/orders?status=paid,preparing,ready', { cache: 'no-store' })
       if (!res.ok) return
       const data = await res.json()
       const fetched: KDSOrder[] = data.orders || []
@@ -241,41 +242,10 @@ export default function KDSPage() {
 
   useEffect(() => {
     fetchOrders()
-    
-    // Polling as fallback
-    const interval = setInterval(fetchOrders, 10000)
-    
-    // Import dynamically so it's only executed on client
-    let channel: any;
-    import('@/lib/supabase/client').then(({ createClient }) => {
-      const supabase = createClient()
-      
-      channel = supabase
-        .channel('schema-db-changes')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'orders',
-          },
-          (payload: any) => {
-            // Refetch orders on any order change (new order, status update)
-            fetchOrders()
-          }
-        )
-        .subscribe()
-    })
-
-    return () => {
-      clearInterval(interval)
-      if (channel) {
-        import('@/lib/supabase/client').then(({ createClient }) => {
-          createClient().removeChannel(channel)
-        })
-      }
-    }
   }, [fetchOrders])
+
+  // New and updated orders show up within ~4s
+  usePolling(fetchOrders, 4000)
 
   const handleAction = async (orderId: string, nextStatus: string) => {
     setActingOn(orderId)

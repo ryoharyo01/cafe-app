@@ -28,11 +28,12 @@ Dibangun dengan **Next.js 16 (App Router)** + **Supabase** + **Tailwind CSS 4**.
 
 ### Sisi Pelanggan (akses via scan QR meja)
 
-- **Menu digital** — daftar menu per kategori, tampil harga & deskripsi.
+- **Menu digital** — daftar menu per kategori dengan foto, harga & deskripsi. Foto default ada di `public/menu/` (sumber & lisensi: `public/menu/CREDITS.md`); menu baru bisa diberi foto lewat kolom URL gambar di Master Menu.
 - **Modifier / opsi** — pilih ukuran, level gula, level es, topping, extra. Tampil sebagai tombol besar 2 kolom; grup wajib ditandai `*wajib`, grup multi-pilih punya limit.
 - **Keranjang** — ubah jumlah, catatan per item, subtotal otomatis.
 - **AI barista** — chat rekomendasi menu (OpenAI-compatible, bisa diarahkan ke endpoint lokal).
-- **Status pesanan realtime** — pelanggan lihat pesanannya berubah status tanpa refresh.
+- **Status pesanan otomatis** — halaman status update sendiri tiap ±4 detik, lengkap dengan animasi cangkir kopi per tahap (menunggu bayar → diproses → siap).
+- **Pembayaran QRIS** — lewat Midtrans kalau key-nya diisi; kalau kosong, otomatis pakai **mode demo** (halaman QRIS simulasi, tombol "Simulasikan bayar berhasil", tanpa uang sungguhan).
 - **QR per meja** — tiap meja punya token unik; scan langsung masuk halaman meja itu.
 
 ### Sisi Kasir (POS)
@@ -43,11 +44,11 @@ Dibangun dengan **Next.js 16 (App Router)** + **Supabase** + **Tailwind CSS 4**.
 
 ### Sisi Dapur (KDS)
 
-- **Layar dapur** — pesanan masuk realtime, tombol ubah status (`paid` → `preparing` → `ready` → `completed`).
+- **Layar dapur** — pesanan masuk otomatis (±4 detik, bunyi beep untuk pesanan baru), tombol ubah status (`paid` → `preparing` → `ready` → `completed`).
 
 ### Sisi Admin
 
-- **Overview** — ringkasan keadaan kafe.
+- **Dashboard** — pendapatan harian/mingguan/bulanan, menu terlaris, metode bayar & sumber pesanan; filter periode, pembayaran, sumber; pembanding periode sebelumnya. Hitungan pakai zona WIB dan hanya pesanan lunas.
 - **Master Menu** — CRUD menu **plus kelola modifier langsung di dalam form yang sama**:
   - pilih grup modifier mana yang nempel ke menu ini,
   - bikin grup baru inline (otomatis terpasang ke menu itu),
@@ -75,7 +76,7 @@ Pelanggan (HP)                Dapur              Admin/Kasir
                        ▼
               ┌────────────────┐
               │   Supabase     │  Postgres + RLS
-              │  (lokal/cloud) │  Realtime (status pesanan)
+              │  (lokal/cloud) │  (UI update via polling API)
               └────────────────┘
 ```
 
@@ -122,8 +123,9 @@ cp .env.example .env.local
 | `OPENAI_API_KEY` | ⬜ | key untuk fitur AI chat |
 | `OPENAI_BASE_URL` | ⬜ | endpoint OpenAI-compatible (default: `https://api.openai.com/v1`) |
 | `OPENAI_MODEL` | ⬜ | model AI chat (default: `gpt-4o-mini`) |
-| `MIDTRANS_SERVER_KEY` | ⬜ | key pembayaran Midtrans (sandbox) |
-| `MIDTRANS_CLIENT_KEY` | ⬜ | key client Midtrans (sandbox) |
+| `MIDTRANS_SERVER_KEY` | ⬜ | key server Midtrans. **Kosongkan = mode demo** (QRIS simulasi) |
+| `MIDTRANS_CLIENT_KEY` | ⬜ | key client Midtrans |
+| `MIDTRANS_IS_PRODUCTION` | ⬜ | `true` = Midtrans production, selain itu sandbox |
 
 Generate `JWT_SECRET`:
 
@@ -197,6 +199,28 @@ npm run build
 npm start
 ```
 
+### Deploy dengan Docker
+
+File-nya ada di `deploy/`. Butuh Docker + Docker Compose.
+
+```bash
+cd deploy
+cp build.env.example build.env   # nilai publik yang ditanam saat build (URL Supabase, anon key, base URL)
+cp ../.env.example .env          # secret runtime (service role, JWT, AI, Midtrans)
+# isi kedua file, lalu:
+docker compose --env-file build.env up -d --build
+```
+
+App jalan di `127.0.0.1:3000`. Pasang reverse proxy (Caddy/Nginx) di depannya untuk HTTPS, contoh Caddy:
+
+```
+cafe.domainmu.com {
+	reverse_proxy 127.0.0.1:3000
+}
+```
+
+Update ke versi baru: `git pull` lalu jalankan lagi perintah `docker compose ... up -d --build`.
+
 ---
 
 ## Alur Pemakaian
@@ -210,7 +234,7 @@ npm start
 ### Staf
 
 1. Buka `/login`, masukkan PIN sesuai role.
-2. **Admin** → `/admin` (Kasir POS, Overview, Master Menu, Master QR, Orders).
+2. **Admin** → `/admin` (Kasir POS, Dashboard, Master Menu, Master QR, Orders).
 3. **Kasir** → `/pos` (layar kasir: buat order walk-in + bayar tunai).
 4. **Dapur** → `/kds` untuk memproses pesanan.
 
@@ -259,13 +283,15 @@ Status pesanan: `pending` → `paid` → `preparing` → `ready` → `completed`
 | `POST` | `/api/admin/modifier-groups/[id]/options` | Tambah opsi ke grup |
 | `PATCH` `DELETE` | `/api/admin/modifier-options/[id]` | Ubah / hapus opsi |
 | `GET` `POST` `DELETE` | `/api/admin/tables` | Daftar / tambah / hapus meja |
+| `GET` | `/api/admin/dashboard?from=&to=&group=day\|week\|month&payment=&source=` | Data dashboard penjualan |
 
 ### Pembayaran
 
 | Method | Endpoint | Keterangan |
 |---|---|---|
-| `POST` | `/api/payment/create` | Buat transaksi Midtrans |
-| `POST` | `/api/payment/webhook` | Callback notifikasi Midtrans |
+| `POST` | `/api/payment/create` | Buat transaksi Midtrans (atau link QRIS demo kalau key kosong) |
+| `POST` | `/api/payment/webhook` | Callback notifikasi Midtrans (otomatis didaftarkan per transaksi) |
+| `POST` | `/api/payment/demo` | Tandai pesanan lunas — **hanya aktif di mode demo** |
 
 ---
 
@@ -325,7 +351,8 @@ Salin URL yang diberikan, lalu isi itu sebagai **Base URL** di tab **Master QR**
 | Log `/_next/hmr 401` spam | Normal saat lewat tunnel (hot-reload), abaikan |
 | Login gagal "PIN salah" | Cek tabel `admin_users`, atau jalankan ulang `supabase-schema.sql` |
 | AI chat error 401 | `OPENAI_API_KEY` kosong/dummy, atau `OPENAI_BASE_URL` salah |
-| Pembayaran tidak lanjut ke `paid` | Key Midtrans masih placeholder — isi key sandbox asli |
+| Muncul halaman "MODE DEMO" saat bayar | Normal kalau key Midtrans kosong. Isi `MIDTRANS_SERVER_KEY` + `MIDTRANS_CLIENT_KEY` untuk pembayaran asli |
+| Pembayaran Midtrans tidak lanjut ke `paid` | Webhook tidak sampai: pastikan `NEXT_PUBLIC_BASE_URL` = URL publik HTTPS app |
 | Kasir tidak bisa buka `/pos` | Login dengan PIN kasir (`222222`); role `dapur` memang ditolak di `/pos` |
 | Bayar tunai ditolak `409` | Pesanan sudah dibayar/dibatalkan orang lain — tarik ulang daftar |
 

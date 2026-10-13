@@ -1,0 +1,20 @@
+# Run from this folder:
+#   cp build.env.example build.env     # public build-time values
+#   cp ../.env.example .env            # runtime secrets
+#   docker compose --env-file build.env up -d --build
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
+    image: cafe-app:latest
+    restart: unless-stopped
+    env_file: .env
+    # Only reachable from the host; put a reverse proxy (Caddy/Nginx) in
+    # front for HTTPS. Change to "3000:3000" to expose it directly.
+    ports:
+      - "127.0.0.1:3000:3000"

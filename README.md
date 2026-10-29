@@ -4,6 +4,14 @@ Aplikasi POS (Point of Sale) kafe berbasis web: pelanggan pesan sendiri dari mej
 
 Dibangun dengan **Next.js 16 (App Router)** + **Supabase** + **Tailwind CSS 4**.
 
+<p align="center">
+  <a href="docs/promo/kopi-nusantara-promo.mp4">
+    <img src="docs/promo/promo-preview.gif" alt="Video promo Kopi Nusantara: scan QR, pilih menu, tanya AI barista, bayar QRIS, pantau pesanan" width="270">
+  </a>
+  <br>
+  <sub>🎬 Video promo 26 detik (9:16) — <a href="docs/promo/kopi-nusantara-promo.mp4">tonton versi HD (MP4)</a></sub>
+</p>
+
 ---
 
 ## Daftar Isi

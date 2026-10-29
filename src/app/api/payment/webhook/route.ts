@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { tryCreateServiceClient } from '@/lib/supabase/server'
 import crypto from 'crypto'
+import { logError } from '@/lib/logger'
 
 // POST /api/payment/webhook - Midtrans notification handler
 export async function POST(request: NextRequest) {
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'ignored: order not found' })
   }
   if (Math.round(Number(gross_amount)) !== order.total) {
-    console.error('Midtrans amount mismatch', { order_id, gross_amount, total: order.total })
+    await logError('payment.webhook', 'Midtrans amount mismatch', { order_id, gross_amount, total: order.total })
     return NextResponse.json({ status: 'ignored: amount mismatch' })
   }
   // Midtrans retries and can deliver out of order: once paid (or moved on by the

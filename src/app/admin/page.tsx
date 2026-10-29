@@ -8,9 +8,10 @@ import AdminDashboard from '@/components/AdminDashboard'
 import MasterMenu from '@/components/MasterMenu'
 import MasterQR from '@/components/MasterQR'
 import POS from '@/components/POS'
-import { BarChart3, UtensilsCrossed, QrCode as QrIcon, ClipboardList, Loader2, Banknote } from 'lucide-react'
+import ErrorLogs from '@/components/ErrorLogs'
+import { BarChart3, UtensilsCrossed, QrCode as QrIcon, ClipboardList, Loader2, Banknote, Bug } from 'lucide-react'
 
-type Tab = 'pos' | 'overview' | 'master-menu' | 'master-qr' | 'orders'
+type Tab = 'pos' | 'overview' | 'master-menu' | 'master-qr' | 'orders' | 'error-logs'
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('pos')
@@ -42,6 +43,7 @@ export default function AdminPage() {
     { key: 'master-menu', label: 'Master Menu', icon: UtensilsCrossed },
     { key: 'master-qr', label: 'Master QR', icon: QrIcon },
     { key: 'orders', label: 'Orders', icon: ClipboardList },
+    { key: 'error-logs', label: 'Error Log', icon: Bug },
   ]
 
   if (loading) {
@@ -87,6 +89,9 @@ export default function AdminPage() {
 
         {/* MASTER QR */}
         {tab === 'master-qr' && <MasterQR />}
+
+        {/* ERROR LOG */}
+        {tab === 'error-logs' && <ErrorLogs />}
 
 
         {/* ORDERS */}

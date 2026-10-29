@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { tryCreateServiceClient } from '@/lib/supabase/server'
 
+// stock: -1 = tidak terbatas, 0 = habis (menu tetap tampil "Sold out"), >0 = sisa
+function invalidStock(stock: unknown) {
+  return stock != null && !(Number.isInteger(stock) && (stock as number) >= -1)
+}
+const STOCK_ERROR = 'Stok harus bilangan bulat: -1 (tidak terbatas), 0 (habis), atau lebih'
+
 // GET /api/admin/menu - List ALL menu items (including unavailable)
 export async function GET() {
   const sb = await tryCreateServiceClient()
@@ -47,6 +53,9 @@ export async function POST(request: NextRequest) {
   if (!name || !category_id || base_price == null) {
     return NextResponse.json({ error: 'name, category_id, and base_price are required' }, { status: 400 })
   }
+  if (invalidStock(stock)) {
+    return NextResponse.json({ error: STOCK_ERROR }, { status: 400 })
+  }
 
   const sb = await tryCreateServiceClient()
   if ('error' in sb) {
@@ -83,6 +92,9 @@ export async function PATCH(request: NextRequest) {
 
   if (!id) {
     return NextResponse.json({ error: 'id is required' }, { status: 400 })
+  }
+  if (invalidStock(updates.stock)) {
+    return NextResponse.json({ error: STOCK_ERROR }, { status: 400 })
   }
 
   const sb = await tryCreateServiceClient()

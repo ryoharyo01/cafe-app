@@ -8,9 +8,12 @@ interface CartStore {
   tableNumber: number | null
   setTable: (id: string, number: number) => void
   addItem: (item: Omit<CartItem, 'item_total'>) => void
+  updateItem: (index: number, item: Omit<CartItem, 'item_total'>) => void
   removeItem: (index: number) => void
   updateQuantity: (index: number, qty: number) => void
+  removeMenuItems: (menuItemIds: string[]) => void
   clearCart: () => void
+  getQuantityFor: (menuItemId: string) => number
   getTotal: () => number
   getItemCount: () => number
 }
@@ -35,6 +38,11 @@ export const useCartStore = create<CartStore>((set, get) => ({
     set((state) => ({ items: [...state.items, newItem] }))
   },
 
+  updateItem: (index, item) =>
+    set((state) => ({
+      items: state.items.map((it, i) => (i === index ? { ...item, item_total: calcItemTotal(item) } : it)),
+    })),
+
   removeItem: (index) =>
     set((state) => ({ items: state.items.filter((_, i) => i !== index) })),
 
@@ -47,7 +55,14 @@ export const useCartStore = create<CartStore>((set, get) => ({
       ),
     })),
 
+  removeMenuItems: (menuItemIds) =>
+    set((state) => ({ items: state.items.filter(item => !menuItemIds.includes(item.menu_item_id)) })),
+
   clearCart: () => set({ items: [] }),
+
+  // Total qty satu menu di keranjang (bisa beberapa baris beda modifier)
+  getQuantityFor: (menuItemId) =>
+    get().items.filter(item => item.menu_item_id === menuItemId).reduce((sum, item) => sum + item.quantity, 0),
 
   getTotal: () => get().items.reduce((sum, item) => sum + item.item_total, 0),
   getItemCount: () => get().items.reduce((sum, item) => sum + item.quantity, 0),

@@ -96,6 +96,7 @@ export interface CartItem {
   modifiers: SelectedModifier[]
   item_total: number
   notes: string
+  image_url?: string | null
 }
 
 export interface CartState {

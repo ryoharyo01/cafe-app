@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePolling } from '@/lib/use-polling'
 import { useParams, useRouter } from 'next/navigation'
 import { Order } from '@/lib/types'
-import { formatRupiah } from '@/lib/utils'
+import { formatRupiah, formatModifiers } from '@/lib/utils'
 import CoffeeWait, { CoffeeStage } from '@/components/CoffeeWait'
 import { ArrowLeft, ChefHat, Check, Truck, Coffee, Loader2 } from 'lucide-react'
 
@@ -181,7 +181,7 @@ export default function OrderStatusPage() {
                   <p className="font-medium">{item.quantity}x {item.menu_item_name}</p>
                   {item.modifiers_json && (item.modifiers_json as any[]).length > 0 && (
                     <p className="text-stone-400 text-sm">
-                      {(item.modifiers_json as any[]).map((m: any) => m.name).join(', ')}
+                      {formatModifiers(item.modifiers_json as any[]).join(', ')}
                     </p>
                   )}
                   {item.notes && <p className="text-stone-500 text-sm italic">"{item.notes}"</p>}

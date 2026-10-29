@@ -293,7 +293,13 @@ export default function MasterMenu() {
                 </td>
                 <td className="px-4 py-3 text-stone-400">{item.category?.icon} {item.category?.name || '-'}</td>
                 <td className="px-4 py-3 text-right font-semibold text-amber-500">{formatRupiah(item.base_price)}</td>
-                <td className="px-4 py-3 text-center text-stone-400">{item.stock === -1 ? '∞' : item.stock}</td>
+                <td className="px-4 py-3 text-center text-stone-400">
+                  {item.stock === -1 ? '∞' : item.stock === 0 ? (
+                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-500/20 text-red-400" title="Tampil Sold out di menu pelanggan">
+                      0 · Habis
+                    </span>
+                  ) : item.stock}
+                </td>
                 <td className="px-4 py-3 text-center">
                   {item.modifier_groups && item.modifier_groups.length > 0 ? (
                     <span

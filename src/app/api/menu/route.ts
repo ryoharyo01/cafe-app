@@ -17,14 +17,13 @@ export async function GET(request: NextRequest) {
     .select('*')
     .order('sort_order')
 
-  // Get menu items
+  // Get menu items (termasuk yang tidak tersedia, ditampilkan sebagai "Habis" di menu)
   let query = supabase
     .from('menu_items')
     .select(`
       *,
       category:categories(*)
     `)
-    .eq('is_available', true)
     .order('name')
 
   if (category && category !== 'all') {

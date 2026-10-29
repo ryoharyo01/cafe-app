@@ -69,6 +69,25 @@ export async function POST(request: NextRequest) {
     dbModifiers = modData || []
   }
 
+  // Cek stok berdasarkan total qty per menu (satu menu bisa beberapa baris beda modifier)
+  const qtyByItem: Record<string, number> = {}
+  for (const item of items) {
+    qtyByItem[item.menu_item_id] = (qtyByItem[item.menu_item_id] || 0) + item.quantity
+  }
+  const soldOut: string[] = []
+  for (const [id, qty] of Object.entries(qtyByItem)) {
+    const dbItem = dbItems?.find(d => d.id === id)
+    if (!dbItem) continue
+    if (!dbItem.is_available || dbItem.stock === 0) {
+      soldOut.push(dbItem.name)
+    } else if (dbItem.stock !== -1 && dbItem.stock < qty) {
+      soldOut.push(`${dbItem.name} (sisa ${dbItem.stock})`)
+    }
+  }
+  if (soldOut.length > 0) {
+    return NextResponse.json({ error: `Stok tidak cukup: ${soldOut.join(', ')}`, sold_out: soldOut }, { status: 409 })
+  }
+
   // Recalculate totals and check availability
   let subtotal = 0
   const validatedItems = []
@@ -156,6 +175,14 @@ export async function POST(request: NextRequest) {
   })
 
   if (rpcError) {
+    // Stok habis duluan oleh order lain di antara validasi dan potong stok
+    if (rpcError.message?.includes('ORDER_ITEM_NO_STOCK')) {
+      const name = rpcError.message.split(':')[1]?.trim()
+      return NextResponse.json(
+        { error: `Stok tidak cukup${name ? `: ${name}` : ''}`, sold_out: name ? [name] : [] },
+        { status: 409 },
+      )
+    }
     return NextResponse.json({ error: rpcError.message }, { status: 500 })
   }
 

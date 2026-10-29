@@ -1,8 +1,37 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { jwtVerify } from 'jose'
+import { clientIp, hit, ruleFor } from '@/lib/rate-limit'
 
 export async function proxy(request: NextRequest) {
+  // Rate limit API publik sebelum cek auth
+  const rule = ruleFor(request.method, request.nextUrl.pathname)
+  if (rule) {
+    const ip = clientIp(request.headers)
+    const rl = hit(rule, ip)
+    if (!rl.ok) {
+      if (rl.firstBlocked) {
+        const { logWarn } = await import('@/lib/logger')
+        await logWarn('rate-limit', `${rule.name}: ${ip} melewati ${rule.limit} request/${rule.windowMs / 1000}s`, {
+          method: request.method,
+          path: request.nextUrl.pathname,
+        })
+      }
+      const retryAfter = Math.ceil((rl.resetAt - Date.now()) / 1000)
+      return NextResponse.json(
+        { error: 'Terlalu banyak request. Coba lagi sebentar ya.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(retryAfter),
+            'X-RateLimit-Limit': String(rl.limit),
+            'X-RateLimit-Remaining': '0',
+          },
+        },
+      )
+    }
+  }
+
   const token = request.cookies.get('admin_session')?.value
 
   // Web pages without a session go straight to /login (no secret needed)
@@ -92,8 +121,6 @@ export const config = {
     '/admin/:path*',
     '/kds/:path*',
     '/pos/:path*',
-    '/api/admin/:path*',
-    '/api/pos/:path*',
-    '/api/orders/:id/status',
+    '/api/:path*',
   ],
 }

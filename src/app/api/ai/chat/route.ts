@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { tryCreateServiceClient } from '@/lib/supabase/server'
 import OpenAI from 'openai'
+import { describeError, logError, logWarn } from '@/lib/logger'
 
 
-function openaiModel() {
-  return process.env.OPENAI_MODEL || 'gpt-4o-mini'
+// Urutan model: OPENAI_MODELS (dipisah koma) dicoba berurutan, fallback ke OPENAI_MODEL
+function openaiModels() {
+  const list = (process.env.OPENAI_MODELS || process.env.OPENAI_MODEL || 'gpt-4o-mini')
+    .split(',')
+    .map(m => m.trim())
+    .filter(Boolean)
+  return [...new Set(list)]
 }
+
+const ATTEMPT_TIMEOUT_MS = Number(process.env.AI_ATTEMPT_TIMEOUT_MS) || 10000
+const TOTAL_TIMEOUT_MS = Number(process.env.AI_TOTAL_TIMEOUT_MS) || 30000
+const FALLBACK_REPLY = 'Maaf, asisten lagi gangguan. Silakan pilih menu secara manual ya! 🙏'
 
 // POST /api/ai/chat - AI menu assistant
 export async function POST(request: NextRequest) {
@@ -23,24 +33,29 @@ export async function POST(request: NextRequest) {
   const MAX_MSGS = 10
   const RESET_MS = 60 * 1000
 
-  const { data: rlData } = await supabase
-    .from('ai_chat_limits')
-    .select('*')
-    .eq('ip', ip)
-    .single()
+  // Kalau tabel rate limit tidak bisa diakses, chat tetap jalan (fail-open)
+  try {
+    const { data: rlData } = await supabase
+      .from('ai_chat_limits')
+      .select('*')
+      .eq('ip', ip)
+      .single()
 
-  if (rlData && now < rlData.reset_at) {
-    if (rlData.count >= MAX_MSGS) {
-      return NextResponse.json({ error: 'Terlalu banyak request AI. Silakan coba lagi nanti.' }, { status: 429 })
-    }
-    await supabase.from('ai_chat_limits').update({ count: rlData.count + 1 }).eq('ip', ip)
-  } else {
-    // Reset or create
-    if (rlData) {
-      await supabase.from('ai_chat_limits').update({ count: 1, reset_at: now + RESET_MS }).eq('ip', ip)
+    if (rlData && now < rlData.reset_at) {
+      if (rlData.count >= MAX_MSGS) {
+        return NextResponse.json({ error: 'Terlalu banyak request AI. Silakan coba lagi nanti.' }, { status: 429 })
+      }
+      await supabase.from('ai_chat_limits').update({ count: rlData.count + 1 }).eq('ip', ip)
     } else {
-      await supabase.from('ai_chat_limits').insert({ ip, count: 1, reset_at: now + RESET_MS })
+      // Reset or create
+      if (rlData) {
+        await supabase.from('ai_chat_limits').update({ count: 1, reset_at: now + RESET_MS }).eq('ip', ip)
+      } else {
+        await supabase.from('ai_chat_limits').insert({ ip, count: 1, reset_at: now + RESET_MS })
+      }
     }
+  } catch (err) {
+    await logWarn('ai.chat', `Rate limit check failed: ${describeError(err).message}`)
   }
 
   const apiKey = process.env.OPENAI_API_KEY
@@ -60,10 +75,18 @@ export async function POST(request: NextRequest) {
   }
 
   // Fetch current menu with availability
-  const { data: items } = await supabase
+  const { data: items, error: menuError } = await supabase
     .from('menu_items')
     .select('name, slug, description, base_price, is_available, stock, category:categories(name)')
     .order('name')
+
+  // Tanpa data menu AI bisa ngarang menu/harga, jadi jangan panggil AI
+  if (menuError || !items || items.length === 0) {
+    await logError('ai.chat', menuError || 'Menu kosong, AI tidak dipanggil')
+    return NextResponse.json({
+      reply: 'Maaf, asisten lagi nggak bisa lihat menu sekarang. Silakan pilih menu secara manual ya! 🙏',
+    })
+  }
 
   const menuContext = items?.map(item => {
     const available = item.is_available && (item.stock === -1 || item.stock > 0)
@@ -89,7 +112,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const systemPrompt = `Kamu adalah asisten cafe yang ramah dan helpful. Nama kamu "Kopi" ☕.
+  const systemPrompt = `Kamu adalah asisten cafe Kopi Nusantara yang ramah dan helpful. Nama kamu "Mas Kopi'i" ☕ (itu nama kamu, bukan nama cafe).
 Kamu membantu pelanggan memilih menu, memberikan rekomendasi, dan menjawab pertanyaan tentang menu.
 
 MENU YANG TERSEDIA:
@@ -103,26 +126,38 @@ RULES:
 - Sebutkan harga saat merekomendasikan
 - Jangan buat menu yang tidak ada di daftar
 - Jawab singkat dan to the point, max 2-3 paragraf
-- Gunakan emoji secukupnya 😊`
+- Gunakan emoji secukupnya 😊
+- Tulis teks biasa, jangan pakai markdown (heading #, tabel, link). Boleh **tebal** untuk nama menu, dan "- " untuk daftar`
 
-  try {
-    const completion = await openai.chat.completions.create({
-      model: openaiModel(),
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: message },
-      ],
-      max_tokens: 500,
-      temperature: 0.7,
-    })
+  // Coba tiap model berurutan; pindah ke model berikutnya kalau error, timeout, atau balasan kosong
+  const deadline = Date.now() + TOTAL_TIMEOUT_MS
+  const failures: string[] = []
+  for (const model of openaiModels()) {
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) break
+    try {
+      const completion = await openai.chat.completions.create(
+        {
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: message },
+          ],
+          max_tokens: 500,
+          temperature: 0.7,
+        },
+        { timeout: Math.min(ATTEMPT_TIMEOUT_MS, remaining), maxRetries: 0 },
+      )
 
-    const reply = completion.choices[0]?.message?.content || 'Maaf, aku lagi error nih 😅'
-
-    return NextResponse.json({ reply })
-  } catch (err: any) {
-    console.error('OpenAI error:', err)
-    return NextResponse.json({
-      reply: 'Maaf, asisten lagi gangguan. Silakan pilih menu secara manual ya! 🙏',
-    })
+      const reply = completion.choices[0]?.message?.content?.trim()
+      if (reply) return NextResponse.json({ reply })
+      failures.push(`${model}: balasan kosong`)
+    } catch (err: any) {
+      failures.push(`${model}: ${err?.status || ''} ${err?.message || err}`.trim())
+    }
   }
+
+  // Satu log per request (bukan per model) supaya fallback antar model tidak bikin spam
+  await logError('ai.chat', `Semua model gagal → fallback reply`, { failures })
+  return NextResponse.json({ reply: FALLBACK_REPLY })
 }

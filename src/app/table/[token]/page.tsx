@@ -1,16 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useCartStore } from '@/store/cart'
 import { Category, MenuItem } from '@/lib/types'
+import { usePolling } from '@/lib/use-polling'
 import MenuList from '@/components/MenuList'
 import Cart from '@/components/Cart'
 import AIChat from '@/components/AIChat'
 import CoffeeWait from '@/components/CoffeeWait'
-import { UtensilsCrossed, MessageCircle, ShoppingCart, AlertCircle } from 'lucide-react'
+import OrderHistory from '@/components/OrderHistory'
+import { startHistorySession } from '@/lib/order-history'
+import { UtensilsCrossed, MessageCircle, ShoppingCart, AlertCircle, ReceiptText } from 'lucide-react'
 
-type Tab = 'menu' | 'ai' | 'cart'
+type Tab = 'menu' | 'ai' | 'cart' | 'history'
 
 export default function TablePage() {
   const params = useParams()
@@ -25,7 +28,25 @@ export default function TablePage() {
   const [categories, setCategories] = useState<Category[]>([])
   const [items, setItems] = useState<MenuItem[]>([])
 
+  // Refresh menu biar status stok/habis tetap baru; return null kalau gagal
+  const loadMenu = useCallback(async (): Promise<MenuItem[] | null> => {
+    try {
+      const res = await fetch('/api/menu')
+      if (!res.ok) return null
+      const data = await res.json()
+      setCategories(data.categories || [])
+      setItems(data.items || [])
+      return data.items || []
+    } catch {
+      return null
+    }
+  }, [])
+
+  usePolling(loadMenu, 15000, !loading && !error)
+
   useEffect(() => {
+    // Scan ulang QR mulai sesi baru: riwayat pesanan sebelumnya dihapus
+    startHistorySession(token)
     async function init() {
       try {
         // Validate table
@@ -39,10 +60,7 @@ export default function TablePage() {
         setTable(tableData.table.id, tableData.table.number)
 
         // Load menu
-        const menuRes = await fetch('/api/menu')
-        const menuData = await menuRes.json()
-        setCategories(menuData.categories || [])
-        setItems(menuData.items || [])
+        if (!(await loadMenu())) setError('Gagal memuat menu')
       } catch {
         setError('Gagal memuat data')
       } finally {
@@ -50,7 +68,7 @@ export default function TablePage() {
       }
     }
     init()
-  }, [token, setTable])
+  }, [token, setTable, loadMenu])
 
   if (loading) {
     return (
@@ -77,9 +95,13 @@ export default function TablePage() {
         {/* Header */}
         <div className="sticky top-0 z-10 bg-stone-950 border-b border-stone-800 px-4 py-3">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-lg font-bold">☕ Cafe</h1>
-              <p className="text-stone-400 text-xs">Meja {tableNumber}</p>
+            <div className="flex items-center gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element -- static svg */}
+              <img src="/logo.svg" alt="Logo cafe" className="w-9 h-9 rounded-full" />
+              <div>
+                <h1 className="text-lg font-bold">Cafe</h1>
+                <p className="text-stone-400 text-xs">Meja {tableNumber}</p>
+              </div>
             </div>
           </div>
         </div>
@@ -91,7 +113,8 @@ export default function TablePage() {
           <div className={tab === 'ai' ? '' : 'hidden'}>
             <AIChat active={tab === 'ai'} />
           </div>
-          {tab === 'cart' && <Cart />}
+          {tab === 'cart' && <Cart menu={items} onRefreshMenu={loadMenu} />}
+          {tab === 'history' && <OrderHistory token={token} active={tab === 'history'} />}
         </div>
 
         {/* Bottom Nav */}
@@ -115,6 +138,12 @@ export default function TablePage() {
               icon={ShoppingCart}
               label="Keranjang"
               badge={itemCount}
+            />
+            <NavButton
+              active={tab === 'history'}
+              onClick={() => setTab('history')}
+              icon={ReceiptText}
+              label="Riwayat"
             />
           </div>
         </div>

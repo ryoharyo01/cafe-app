@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { MenuItem, Category, SelectedModifier } from '@/lib/types'
-import { formatRupiah } from '@/lib/utils'
+import { formatRupiah, isSoldOut, maxOrderQty } from '@/lib/utils'
 import { useCartStore } from '@/store/cart'
 import { Plus, Minus, X, Check, UtensilsCrossed } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -15,11 +15,23 @@ interface Props {
 
 export default function MenuList({ categories, items, loading = false }: Props) {
   const [activeCategory, setActiveCategory] = useState('all')
-  const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Ambil dari props terbaru supaya stok di modal ikut ter-update saat polling
+  const selectedItem = items.find(i => i.id === selectedId) ?? null
 
-  const filtered = activeCategory === 'all'
-    ? items
+  // Menu yang habis ditaruh paling bawah
+  const filtered = (activeCategory === 'all'
+    ? [...items]
     : items.filter(i => i.category?.slug === activeCategory)
+  ).sort((a, b) => Number(isSoldOut(a)) - Number(isSoldOut(b)))
+
+  function handleSelect(item: MenuItem) {
+    if (isSoldOut(item)) {
+      toast.error(`${item.name} lagi habis 🙏`)
+      return
+    }
+    setSelectedId(item.id)
+  }
 
   // #5 Loading state: skeleton kartu, bukan layar blank
   if (loading) {
@@ -97,25 +109,48 @@ export default function MenuList({ categories, items, loading = false }: Props) 
 
       {/* Items Grid */}
       <div className="grid grid-cols-1 gap-3">
-        {filtered.map(item => (
-          <button
-            key={item.id}
-            onClick={() => setSelectedItem(item)}
-            className="bg-stone-900 rounded-2xl p-3 text-left hover:bg-stone-800 flex items-center"
-          >
-            <MenuPhoto item={item} className="w-24 h-24 rounded-xl mr-3" />
-            <div className="flex-1 min-w-0 mr-3">
-              <p className="font-semibold text-stone-100">{item.name}</p>
-              {item.description && (
-                <p className="text-stone-400 text-sm mt-1 line-clamp-2">{item.description}</p>
-              )}
-              <p className="text-amber-500 font-bold mt-2">{formatRupiah(item.base_price)}</p>
-            </div>
-            <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shrink-0" aria-hidden="true">
-              <Plus className="w-5 h-5 text-stone-950" />
-            </div>
-          </button>
-        ))}
+        {filtered.map(item => {
+          const soldOut = isSoldOut(item)
+          const lowStock = !soldOut && item.stock !== -1 && item.stock <= 5
+          return (
+            <button
+              key={item.id}
+              onClick={() => handleSelect(item)}
+              aria-disabled={soldOut}
+              className={`bg-stone-900 rounded-2xl p-3 text-left flex items-center ${
+                soldOut ? 'cursor-not-allowed' : 'hover:bg-stone-800'
+              }`}
+            >
+              <div className="relative shrink-0 mr-3">
+                <MenuPhoto item={item} className={`w-24 h-24 rounded-xl ${soldOut ? 'grayscale opacity-40' : ''}`} />
+                {soldOut && (
+                  <span className="absolute inset-0 flex items-center justify-center">
+                    <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-lg -rotate-6">HABIS</span>
+                  </span>
+                )}
+              </div>
+              <div className={`flex-1 min-w-0 mr-3 ${soldOut ? 'opacity-50' : ''}`}>
+                <p className="font-semibold text-stone-100">{item.name}</p>
+                {item.description && (
+                  <p className="text-stone-400 text-sm mt-1 line-clamp-2">{item.description}</p>
+                )}
+                <p className="text-amber-500 font-bold mt-2">{formatRupiah(item.base_price)}</p>
+                {soldOut && <p className="text-red-400 text-xs font-semibold mt-1">Sold out</p>}
+                {lowStock && <p className="text-amber-300 text-xs mt-1">Sisa {item.stock}</p>}
+              </div>
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  soldOut ? 'bg-stone-800' : 'bg-amber-500'
+                }`}
+                aria-hidden="true"
+              >
+                {soldOut
+                  ? <X className="w-5 h-5 text-stone-500" />
+                  : <Plus className="w-5 h-5 text-stone-950" />}
+              </div>
+            </button>
+          )
+        })}
         {filtered.length === 0 && (
           <p className="text-stone-500 text-center py-8">Tidak ada menu di kategori ini</p>
         )}
@@ -123,14 +158,18 @@ export default function MenuList({ categories, items, loading = false }: Props) 
 
       {/* Modifier Modal */}
       {selectedItem && (
-        <ItemModal item={selectedItem} onClose={() => setSelectedItem(null)} />
+        <ItemModal item={selectedItem} onClose={() => setSelectedId(null)} />
       )}
     </div>
   )
 }
 
 // Menu photo with a neutral placeholder when there's no image or it fails to load
-function MenuPhoto({ item, className, eager = false }: { item: MenuItem; className: string; eager?: boolean }) {
+export function MenuPhoto({ item, className, eager = false }: {
+  item: { name: string; image_url?: string | null }
+  className: string
+  eager?: boolean
+}) {
   const [failed, setFailed] = useState(false)
   if (!item.image_url || failed) {
     return (
@@ -151,54 +190,103 @@ function MenuPhoto({ item, className, eager = false }: { item: MenuItem; classNa
   )
 }
 
-function ItemModal({ item, onClose }: { item: MenuItem; onClose: () => void }) {
+// Dipakai juga dari keranjang untuk ubah item (editIndex = baris keranjang yang diubah)
+export function ItemModal({ item, onClose, editIndex }: { item: MenuItem; onClose: () => void; editIndex?: number }) {
   const addItem = useCartStore(s => s.addItem)
-  const [quantity, setQuantity] = useState(1)
-  const [notes, setNotes] = useState('')
-  const [selected, setSelected] = useState<Record<string, SelectedModifier[]>>({})
+  const updateItem = useCartStore(s => s.updateItem)
+  const editing = useCartStore(s => (editIndex != null ? s.items[editIndex] : undefined))
+  const inCart = useCartStore(s => s.getQuantityFor(item.id))
+  const [quantity, setQuantity] = useState(editing?.quantity ?? 1)
+
+  // Sisa yang masih bisa ditambah = stok dikurangi yang sudah ada di keranjang
+  // (baris yang sedang diubah tidak ikut dihitung)
+  const remaining = Math.max(0, maxOrderQty(item) - inCart + (editing?.quantity ?? 0))
+  const canAdd = remaining > 0 && quantity <= remaining
+  const [notes, setNotes] = useState(editing?.notes ?? '')
+  const [selected, setSelected] = useState<Record<string, SelectedModifier[]>>(() => {
+    const init: Record<string, SelectedModifier[]> = {}
+    for (const m of editing?.modifiers ?? []) (init[m.group_name] ??= []).push(m)
+    return init
+  })
+  const [highlightMissing, setHighlightMissing] = useState(false)
 
   const groups = item.modifier_groups || []
 
-  function toggleOption(groupName: string, option: { id: string; name: string; price_add: number }, maxSelect: number) {
+  function toModifier(groupName: string, option: { id: string; name: string; price_add: number }): SelectedModifier {
+    return { id: option.id, name: option.name, group_name: groupName, price_add: option.price_add }
+  }
+
+  // Grup pilih-satu: tap untuk pilih/batal
+  function toggleOption(groupName: string, option: { id: string; name: string; price_add: number }) {
     setSelected(prev => {
-      const current = prev[groupName] || []
-      const exists = current.find(c => c.name === option.name)
-      if (exists) {
-        return { ...prev, [groupName]: current.filter(c => c.name !== option.name) }
-      }
-      if (maxSelect === 1) {
-        return { ...prev, [groupName]: [{ id: option.id, name: option.name, group_name: groupName, price_add: option.price_add }] }
-      }
-      if (current.length >= maxSelect) return prev
-      return { ...prev, [groupName]: [...current, { id: option.id, name: option.name, group_name: groupName, price_add: option.price_add }] }
+      const on = (prev[groupName] || []).some(c => c.id === option.id)
+      return { ...prev, [groupName]: on ? [] : [toModifier(groupName, option)] }
     })
   }
 
-  function isSelected(groupName: string, optionName: string) {
-    return (selected[groupName] || []).some(s => s.name === optionName)
+  // Grup multi-pilih: opsi bisa diambil berkali-kali (Extra Shot ×2), total per grup maks max_select
+  function changeCount(groupName: string, option: { id: string; name: string; price_add: number }, delta: 1 | -1, maxSelect: number) {
+    setSelected(prev => {
+      const current = prev[groupName] || []
+      if (delta === 1) {
+        if (current.length >= maxSelect) return prev
+        return { ...prev, [groupName]: [...current, toModifier(groupName, option)] }
+      }
+      const idx = current.findLastIndex(c => c.id === option.id)
+      if (idx === -1) return prev
+      return { ...prev, [groupName]: current.filter((_, i) => i !== idx) }
+    })
+  }
+
+  function countOf(groupName: string, optionId: string) {
+    return (selected[groupName] || []).filter(s => s.id === optionId).length
   }
 
   // Check required groups
   const missingRequired = groups.filter(g => g.is_required && (!selected[g.name] || selected[g.name].length === 0))
 
-  const allModifiers = Object.values(selected).flat()
+  // Urutkan sesuai urutan grup di menu, bukan urutan tap
+  const allModifiers = groups.flatMap(g => selected[g.name] || [])
   const modPrice = allModifiers.reduce((s, m) => s + m.price_add, 0)
   const total = (item.base_price + modPrice) * quantity
 
   function handleAdd() {
-    if (missingRequired.length > 0) {
-      toast.error(`Pilih ${missingRequired.map(g => g.name).join(', ')} dulu`)
+    if (isSoldOut(item)) {
+      toast.error(`${item.name} lagi habis 🙏`)
+      onClose()
       return
     }
-    addItem({
+    if (quantity > remaining) {
+      toast.error(remaining > 0
+        ? `Stok ${item.name} tinggal ${remaining} lagi`
+        : `Stok ${item.name} sudah habis di keranjangmu`)
+      return
+    }
+    if (missingRequired.length > 0) {
+      // id tetap supaya tap berulang tidak menumpuk toast
+      toast.error(`Pilih ${missingRequired.map(g => g.name).join(', ')} dulu`, { id: 'modifier-required' })
+      // Grup yang kelewat sering ada di atas layar, scroll ke sana + sorot
+      setHighlightMissing(true)
+      document.getElementById(`modgroup-${missingRequired[0].id}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+    const cartItem = {
       menu_item_id: item.id,
       menu_item_name: item.name,
       quantity,
       unit_price: item.base_price,
       modifiers: allModifiers,
       notes,
-    })
-    toast.success(`${item.name} ditambahkan`)
+      image_url: item.image_url,
+    }
+    if (editIndex != null && editing) {
+      updateItem(editIndex, cartItem)
+      toast.success(`${item.name} diperbarui`)
+    } else {
+      addItem(cartItem)
+      toast.success(`${item.name} ditambahkan`)
+    }
     onClose()
   }
 
@@ -222,22 +310,68 @@ function ItemModal({ item, onClose }: { item: MenuItem; onClose: () => void }) {
         </div>
 
         {/* Modifier Groups */}
-        {groups.map(group => (
-          <div key={group.id} className="mb-5">
+        {groups.map(group => {
+          const missing = highlightMissing && missingRequired.some(g => g.id === group.id)
+          const multi = group.max_select > 1
+          const groupCount = selected[group.name]?.length ?? 0
+          return (
+          <div
+            key={group.id}
+            id={`modgroup-${group.id}`}
+            className={`mb-5 rounded-2xl transition-colors ${missing ? 'ring-2 ring-red-500 p-3 -m-3 mb-2' : ''}`}
+          >
             <p className="font-semibold mb-2">
               {group.name} {group.is_required && <span className="text-red-400 text-xs">*wajib</span>}
+              {missing && <span className="text-red-400 text-xs ml-2">← belum dipilih</span>}
             </p>
             <div className="grid grid-cols-2 gap-3">
               {group.options.map(opt => {
-                const on = isSelected(group.name, opt.name)
-                const atMax = !on && group.max_select > 1 &&
-                  (selected[group.name]?.length ?? 0) >= group.max_select
+                const count = countOf(group.name, opt.id)
+                const on = count > 0
+                const price = (
+                  <p className={`text-xs mt-1 ${on ? 'text-stone-800' : 'text-stone-400'}`}>
+                    {opt.price_add > 0 ? `+${formatRupiah(opt.price_add)}` : 'Gratis'}
+                  </p>
+                )
+                if (multi) {
+                  const full = groupCount >= group.max_select
+                  return (
+                    <div
+                      key={opt.id}
+                      className={`rounded-2xl p-3 transition-colors ${
+                        on ? 'bg-amber-500 text-stone-950 ring-2 ring-amber-400' : 'bg-stone-800 text-stone-300'
+                      }`}
+                    >
+                      <p className={`font-semibold text-sm ${on ? 'text-stone-950' : 'text-stone-100'}`}>{opt.name}</p>
+                      {price}
+                      <div className="flex items-center justify-between mt-2">
+                        <button
+                          onClick={() => changeCount(group.name, opt, -1, group.max_select)}
+                          disabled={!on}
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-30 ${on ? 'bg-stone-950' : 'bg-stone-700'}`}
+                          aria-label={`Kurangi ${opt.name}`}
+                        >
+                          <Minus className={`w-4 h-4 ${on ? 'text-amber-500' : 'text-stone-400'}`} />
+                        </button>
+                        <span className="font-bold w-6 text-center" aria-label={`Jumlah ${opt.name}`}>{count}</span>
+                        <button
+                          onClick={() => changeCount(group.name, opt, 1, group.max_select)}
+                          disabled={full}
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-30 ${on ? 'bg-stone-950' : 'bg-stone-700'}`}
+                          aria-label={`Tambah ${opt.name}`}
+                        >
+                          <Plus className={`w-4 h-4 ${on ? 'text-amber-500' : 'text-stone-400'}`} />
+                        </button>
+                      </div>
+                    </div>
+                  )
+                }
                 return (
                   <button
                     key={opt.id}
-                    disabled={atMax}
-                    onClick={() => toggleOption(group.name, opt, group.max_select)}
-                    className={`rounded-2xl p-3 text-left transition-colors disabled:opacity-40 ${
+                    onClick={() => toggleOption(group.name, opt)}
+                    aria-pressed={on}
+                    className={`rounded-2xl p-3 text-left transition-colors ${
                       on
                         ? 'bg-amber-500 text-stone-950 ring-2 ring-amber-400'
                         : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
@@ -248,9 +382,7 @@ function ItemModal({ item, onClose }: { item: MenuItem; onClose: () => void }) {
                         <p className={`font-semibold text-sm ${on ? 'text-stone-950' : 'text-stone-100'}`}>
                           {opt.name}
                         </p>
-                        <p className={`text-xs mt-1 ${on ? 'text-stone-800' : 'text-stone-400'}`}>
-                          {opt.price_add > 0 ? `+${formatRupiah(opt.price_add)}` : 'Gratis'}
-                        </p>
+                        {price}
                       </div>
                       <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
                         on ? 'bg-stone-950' : 'bg-stone-700'
@@ -262,13 +394,14 @@ function ItemModal({ item, onClose }: { item: MenuItem; onClose: () => void }) {
                 )
               })}
             </div>
-            {group.max_select > 1 && (
+            {multi && (
               <p className="text-stone-500 text-xs mt-2">
-                Pilih maks. {group.max_select} • terpilih {selected[group.name]?.length ?? 0}
+                Pilih maks. {group.max_select} • terpilih {groupCount}
               </p>
             )}
           </div>
-        ))}
+          )
+        })}
 
         {/* Notes */}
         <div className="mb-4">
@@ -282,22 +415,37 @@ function ItemModal({ item, onClose }: { item: MenuItem; onClose: () => void }) {
           />
         </div>
 
+        {/* Info stok terbatas */}
+        {item.stock !== -1 && (
+          <p className={`text-sm mt-4 ${remaining > 0 ? 'text-amber-300' : 'text-red-400'}`}>
+            {remaining > 0
+              ? `Sisa stok ${item.stock}${inCart > 0 ? ` • ${inCart} sudah di keranjang` : ''}`
+              : `Stok habis${inCart > 0 ? ` • ${inCart} sudah di keranjang` : ''}`}
+          </p>
+        )}
+
         {/* Quantity + Add */}
         <div className="flex items-center gap-4 mt-6">
           <div className="flex items-center gap-3 bg-stone-800 rounded-xl px-2">
-            <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2">
+            <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="p-2" aria-label="Kurangi">
               <Minus className="w-4 h-4" />
             </button>
             <span className="font-bold text-lg w-6 text-center">{quantity}</span>
-            <button onClick={() => setQuantity(q => q + 1)} className="p-2">
+            <button
+              onClick={() => setQuantity(q => Math.min(Math.max(1, remaining), q + 1))}
+              disabled={quantity >= remaining}
+              className="p-2 disabled:opacity-30"
+              aria-label="Tambah"
+            >
               <Plus className="w-4 h-4" />
             </button>
           </div>
           <button
             onClick={handleAdd}
-            className="flex-1 py-4 bg-amber-500 text-stone-950 font-bold rounded-xl text-lg hover:bg-amber-400"
+            disabled={!canAdd}
+            className="flex-1 py-4 bg-amber-500 text-stone-950 font-bold rounded-xl text-lg hover:bg-amber-400 disabled:bg-stone-700 disabled:text-stone-400"
           >
-            Tambah {formatRupiah(total)}
+            {!canAdd ? 'Stok habis' : editing ? `Simpan ${formatRupiah(total)}` : `Tambah ${formatRupiah(total)}`}
           </button>
         </div>
       </div>

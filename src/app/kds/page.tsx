@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Order, OrderItem, SelectedModifier } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, formatModifiers } from '@/lib/utils'
 import { usePolling } from '@/lib/use-polling'
 import {
   ChefHat,
@@ -161,9 +161,9 @@ function OrderCard({
               <p className="text-white font-semibold text-base leading-tight">{item.menu_item_name}</p>
               {item.modifiers_json && item.modifiers_json.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1">
-                  {(item.modifiers_json as SelectedModifier[]).map((mod, i) => (
+                  {formatModifiers(item.modifiers_json as SelectedModifier[]).map((label, i) => (
                     <span key={i} className="text-xs bg-stone-700/60 text-stone-300 px-1.5 py-0.5 rounded">
-                      {mod.name}
+                      {label}
                     </span>
                   ))}
                 </div>

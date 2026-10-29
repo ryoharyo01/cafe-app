@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { tryCreateServiceClient } from '@/lib/supabase/server'
 import midtransClient from 'midtrans-client'
 import { isDemoPayment } from '@/lib/payment'
+import { logError } from '@/lib/logger'
 
 function getSnap() {
   const snap = new midtransClient.Snap({
@@ -99,7 +100,7 @@ export async function POST(request: NextRequest) {
       redirect_url: transaction.redirect_url,
     })
   } catch (err: any) {
-    console.error('Midtrans error:', err?.ApiResponse || err)
+    await logError('payment.create', err, { order_id, midtrans: err?.ApiResponse })
     return NextResponse.json({ error: 'Gagal membuat pembayaran. Coba lagi sebentar.' }, { status: 502 })
   }
 }
